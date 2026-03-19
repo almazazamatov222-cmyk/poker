@@ -406,6 +406,7 @@ html, body {
 
 .seat-bet-chip {
   position: absolute;
+  transform: translate(-50%, -50%);
   font-size: 0.7em; font-weight: 700;
   background: rgba(20,20,40,0.92);
   border: 1px solid rgba(200,168,75,0.4);
@@ -414,7 +415,6 @@ html, body {
   white-space: nowrap;
   pointer-events: none;
   z-index: 10;
-  /* Positioned via inline style, pointing toward center */
 }
 
 .seat-cards {
