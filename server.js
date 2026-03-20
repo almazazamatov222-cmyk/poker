@@ -8,7 +8,22 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files — works whether public/ exists or files are at root
+const fs2 = require('fs');
+const publicDir = path.join(__dirname, 'public');
+const hasPublic = fs2.existsSync(publicDir);
+app.use(express.static(hasPublic ? publicDir : __dirname));
+
+// Debug + fallback root handler
+app.get('/', (req, res) => {
+  const idx1 = path.join(__dirname, 'public', 'index.html');
+  const idx2 = path.join(__dirname, 'index.html');
+  if (fs2.existsSync(idx1)) return res.sendFile(idx1);
+  if (fs2.existsSync(idx2)) return res.sendFile(idx2);
+  // Show debug info so we can see what's wrong
+  const files = fs2.readdirSync(__dirname);
+  res.status(500).send('Cannot find index.html. Dir: ' + __dirname + ' | Files: ' + files.join(', '));
+});
 
 const rooms = {};
 
