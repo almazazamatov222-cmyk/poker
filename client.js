@@ -5,9 +5,10 @@ const socket = io();
 let gameState   = null;
 let myId        = null;
 let localStream = null;
-let peers       = {};   // peerId → RTCPeerConnection
+let peers       = {};
 let raiseTarget = 0;
 let cameraOn    = false;
+let sdTimer     = null;
 
 const ICE_CONFIG = {
   iceServers: [
@@ -48,6 +49,11 @@ function joinRoom() {
 
 function startGame() { socket.emit('start-game'); }
 
+function leaveTable() {
+  socket.disconnect();
+  location.reload();
+}
+
 function lobbyErr(msg) {
   const el = document.getElementById('lobby-error');
   el.textContent = msg;
@@ -58,17 +64,19 @@ function lobbyErr(msg) {
 //  SOCKET EVENTS
 // ═══════════════════════════════════════════
 socket.on('joined', ({ roomId }) => {
-  myId = socket.id;  // socket.io client exposes socket.id after connection
+  myId = socket.id;
   document.getElementById('lobby').style.display = 'none';
   document.getElementById('game').classList.add('active');
   document.getElementById('hdr-room').textContent     = 'ROOM: ' + roomId;
   document.getElementById('ov-room-code').textContent = roomId;
   document.getElementById('waiting-overlay').style.display = 'flex';
+  setTimeout(updateTableScale, 100);
 });
 
 socket.on('state', state => {
   if (state.myId) myId = state.myId;
-  gameState = state; renderGame(state);
+  gameState = state;
+  renderGame(state);
 });
 
 socket.on('peer-joined', async ({ peerId }) => {
@@ -126,7 +134,6 @@ function getPC(peerId) {
   return pc;
 }
 
-// Show a media stream inside the seat-video-wrap of a seat
 function showVideoInSeat(pid, stream, muted) {
   const wrap = document.querySelector(`.seat[data-pid="${pid}"] .seat-video-wrap`);
   if (!wrap) return;
@@ -140,7 +147,6 @@ function showVideoInSeat(pid, stream, muted) {
   vid.muted = muted;
   if (vid.srcObject !== stream) vid.srcObject = stream;
   vid.style.display = 'block';
-  // hide avatar when video active
   const av = wrap.querySelector('.seat-avatar');
   if (av) av.style.display = 'none';
 }
@@ -154,7 +160,6 @@ async function toggleCamera() {
       btn.textContent = '📷 ВКЛ';
       btn.style.color = '#4caf50';
       showVideoInSeat(myId, localStream, true);
-      // add tracks to existing connections
       for (const pid in peers) {
         localStream.getTracks().forEach(t => { try { peers[pid].addTrack(t, localStream); } catch(e) {} });
       }
@@ -163,7 +168,6 @@ async function toggleCamera() {
     localStream.getTracks().forEach(t => t.stop());
     localStream = null; cameraOn = false;
     btn.textContent = '📷 Камера'; btn.style.color = '';
-    // restore avatar
     const wrap = document.querySelector(`.seat[data-pid="${myId}"] .seat-video-wrap`);
     if (wrap) {
       const vid = wrap.querySelector('video'); if (vid) vid.style.display = 'none';
@@ -173,9 +177,22 @@ async function toggleCamera() {
 }
 
 // ═══════════════════════════════════════════
+//  TABLE SCALING — fills available space
+// ═══════════════════════════════════════════
+function updateTableScale() {
+  const section = document.getElementById('table-section');
+  const area    = document.getElementById('table-area');
+  if (!section || !area) return;
+  const sw = section.clientWidth  - 32;
+  const sh = section.clientHeight - 32;
+  const scale = Math.min(sw / 860, sh / 480, 1.8);
+  area.style.transform = `scale(${Math.max(scale, 0.35)})`;
+}
+window.addEventListener('resize', updateTableScale);
+
+// ═══════════════════════════════════════════
 //  RENDER GAME
 // ═══════════════════════════════════════════
-// 10 seat positions as % of #table-area (860×480px), clockwise from bottom center
 const SEAT_POS = [
   { x:50,   y:88   }, { x:75.3, y:80.7 }, { x:90.9, y:61.7 },
   { x:90.9, y:38.3 }, { x:75.3, y:19.3 }, { x:50,   y:12   },
@@ -192,17 +209,16 @@ function renderGame(state) {
     document.getElementById('ov-players').innerHTML = state.players.map(p =>
       `<div class="ov-player-chip${p.isHost?' host':''}">${esc(p.name)}</div>`
     ).join('');
-    show('ov-start-btn',    !!me?.isHost);
-    show('ov-waiting-msg',  !me?.isHost);
+    show('ov-start-btn',   !!me?.isHost);
+    show('ov-waiting-msg', !me?.isHost);
     return;
   }
 
-  // derive currentPlayerId from index
   state.currentPlayerId = state.players[state.currentIdx]?.id ?? null;
 
   const PHASE = { preflop:'Префлоп', flop:'Флоп', turn:'Тёрн', river:'Ривер', showdown:'Шоудаун' };
-  document.getElementById('hdr-phase').textContent = PHASE[state.phase] || state.phase;
-  document.getElementById('hdr-hand').textContent  = 'Раздача #' + state.handNum;
+  document.getElementById('hdr-phase').textContent  = PHASE[state.phase] || state.phase;
+  document.getElementById('hdr-hand').textContent   = 'Раздача #' + state.handNum;
   document.getElementById('pot-amount').textContent = state.pot;
   document.getElementById('community-cards').innerHTML =
     (state.community || []).map(c => cardHtml(c)).join('');
@@ -218,8 +234,27 @@ function renderGame(state) {
 
   renderActions(state, me);
 
-  if (state.phase === 'showdown') renderShowdown(state);
-  else document.getElementById('showdown-overlay').style.display = 'none';
+  // Showdown: show community cards for 2s first, then overlay
+  if (state.phase === 'showdown') {
+    const ov = document.getElementById('showdown-overlay');
+    if (ov.style.display !== 'flex') {
+      clearTimeout(sdTimer);
+      sdTimer = setTimeout(() => renderShowdown(state), 2000);
+    } else {
+      renderShowdown(state);
+    }
+  } else {
+    clearTimeout(sdTimer);
+    document.getElementById('showdown-overlay').style.display = 'none';
+  }
+}
+
+// ─── Avatar helper ────────────────────────
+function avatarHtml(name) {
+  const palette = ['#c0392b','#2980b9','#27ae60','#d4a017','#8e44ad','#16a085','#e67e22','#2c3e50'];
+  const bg = palette[(name.charCodeAt(0) + (name.charCodeAt(1) || 0)) % palette.length];
+  const initials = name.slice(0, 2).toUpperCase();
+  return `<div class="seat-avatar" style="background:${bg}">${initials}</div>`;
 }
 
 // ─── Seats ────────────────────────────────
@@ -233,11 +268,10 @@ function renderSeats(state) {
 
   ordered.forEach((player, idx) => {
     if (idx >= SEAT_POS.length) return;
-    const pos = SEAT_POS[idx];
-    const isMe     = player.id === myId;
+    const pos    = SEAT_POS[idx];
+    const isMe   = player.id === myId;
     const isActive = state.currentPlayerId === player.id;
 
-    // ── seat element ──
     const seat = document.createElement('div');
     seat.className = 'seat'
       + (isMe          ? ' is-me'       : '')
@@ -248,12 +282,9 @@ function renderSeats(state) {
     seat.style.left  = pos.x + '%';
     seat.style.top   = pos.y + '%';
 
-    // avatar url as background
-    const av = `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(player.name)}`;
-
     seat.innerHTML = `
       <div class="seat-video-wrap">
-        <div class="seat-avatar" style="background-image:url('${av}');background-size:cover;background-position:center;"></div>
+        ${avatarHtml(player.name)}
       </div>
       <div class="seat-name">${esc(player.name)}${player.isHost ? ' 👑' : ''}</div>
       <div class="seat-chips">${player.chips}</div>
@@ -263,21 +294,19 @@ function renderSeats(state) {
     `;
     layer.appendChild(seat);
 
-    // ── bet chip (absolutely positioned between seat and center) ──
+    // Bet chip between seat and center
     if (player.bet > 0) {
       const chip = document.createElement('div');
       chip.className = 'seat-bet-chip';
-      const bx = pos.x + (50 - pos.x) * 0.42;
-      const by = pos.y + (50 - pos.y) * 0.42;
-      chip.style.left = bx + '%';
-      chip.style.top  = by + '%';
+      chip.style.left = (pos.x + (50 - pos.x) * 0.42) + '%';
+      chip.style.top  = (pos.y + (50 - pos.y) * 0.42) + '%';
       chip.textContent = player.bet;
       layer.appendChild(chip);
     }
 
-    // ── restore live video streams after re-render ──
-    if (isMe && localStream)             showVideoInSeat(myId,      localStream,            true);
-    else if (peers[player.id]?._stream)  showVideoInSeat(player.id, peers[player.id]._stream, false);
+    // Restore video streams after re-render
+    if (isMe && localStream)            showVideoInSeat(myId,      localStream,            true);
+    else if (peers[player.id]?._stream) showVideoInSeat(player.id, peers[player.id]._stream, false);
   });
 }
 
@@ -289,16 +318,17 @@ function seatCards(player, reveal) {
   return player.cards.map(c => cardHtml(c)).join('');
 }
 
-// ─── Action Bar ───────────────────────────
+// ─── Actions ──────────────────────────────
 function renderActions(state, me) {
   const myTurn = !!(me && state.currentPlayerId === myId && !me.folded && !me.allIn);
   document.getElementById('action-bar').classList.toggle('my-turn', myTurn);
 
-  show('btn-fold',    myTurn);
-  show('btn-check',   myTurn && me.bet >= state.currentBet);
-  show('btn-call',    myTurn && me.bet <  state.currentBet);
-  show('raise-group', myTurn && me.chips > 0);
-  show('btn-allin',   myTurn);
+  // show/hide each button with correct display type
+  showBtn('btn-fold',    myTurn);
+  showBtn('btn-check',   myTurn && me.bet >= state.currentBet);
+  showBtn('btn-call',    myTurn && me.bet <  state.currentBet);
+  showFlex('raise-group', myTurn && me.chips > 0);
+  showBtn('btn-allin',   myTurn);
 
   if (!myTurn) return;
 
@@ -325,35 +355,37 @@ function sendAction(action) {
   socket.emit('action', action === 'raise' ? { action, amount: raiseTarget } : { action });
 }
 
-// ─── Showdown Overlay ─────────────────────
+// ─── Showdown overlay ─────────────────────
 function renderShowdown(state) {
   const ov      = document.getElementById('showdown-overlay');
-  const result  = state.showdown;  // { winners:[{id,name,handName}], allHands:[...] }
+  const result  = state.showdown;
   const winners = result?.winners || state.players.filter(p => p.winner);
 
-  // pot already distributed, grab from winner chip delta via result
-  const winNames = winners.map(w => esc(w.name)).join(' и ');
-  document.getElementById('sd-title').textContent = winNames
-    ? `🏆 ${winNames} побеждает!`
+  document.getElementById('sd-title').textContent = winners.length
+    ? `🏆 ${winners.map(w => w.name).join(' и ')} побеждает!`
     : 'Итоги раздачи';
 
-  // show all hands that stayed in
   const hands = result?.allHands?.length
     ? result.allHands
     : state.players.filter(p => p.inHand && !p.folded && p.cards?.length);
+  const winIds = new Set(winners.map(w => w.id));
 
-  const winnerIds = new Set(winners.map(w => w.id));
-  document.getElementById('sd-content').innerHTML = hands
-    .map(p => `
-      <div class="sd-hand-row${winnerIds.has(p.id) ? ' sd-winner' : ''}">
-        <span class="sd-name">${esc(p.name)}</span>
-        <div class="sd-cards">${(p.cards || []).map(c => cardHtml(c)).join('')}</div>
-        <span class="sd-hand-type">${p.handName || ''}</span>
-      </div>`).join('');
+  const boardHtml = state.community?.length ? `
+    <div class="sd-board">
+      <div class="sd-board-label">БОРД</div>
+      <div class="sd-cards">${state.community.map(c => cardHtml(c)).join('')}</div>
+    </div>` : '';
 
+  const handsHtml = hands.map(p => `
+    <div class="sd-hand-row${winIds.has(p.id) ? ' sd-winner' : ''}">
+      <span class="sd-name">${esc(p.name)}</span>
+      <div class="sd-cards">${(p.cards||[]).map(c => cardHtml(c)).join('')}</div>
+      <span class="sd-hand-type">${p.handName || ''}</span>
+    </div>`).join('');
+
+  document.getElementById('sd-content').innerHTML = boardHtml + handsHtml;
   ov.style.display = 'flex';
 
-  // countdown bar
   const fill = document.getElementById('sd-timer-fill');
   fill.style.transition = 'none'; fill.style.width = '100%';
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -386,9 +418,18 @@ function cardHtml(card, hidden = false, size = '') {
 // ═══════════════════════════════════════════
 //  UTILS
 // ═══════════════════════════════════════════
+// FIX: explicit display types so CSS default doesn't override
 function show(id, visible) {
   const el = document.getElementById(id);
   if (el) el.style.display = visible ? '' : 'none';
+}
+function showBtn(id, visible) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = visible ? 'inline-flex' : 'none';
+}
+function showFlex(id, visible) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = visible ? 'flex' : 'none';
 }
 
 function showToast(msg) {
