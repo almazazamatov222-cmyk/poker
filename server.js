@@ -479,4 +479,6 @@ function viewFor(room, myId) {
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🃏  Poker Night → http://localhost:${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🃏  Poker Night running on port ${PORT}`);
+});
