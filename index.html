@@ -14,65 +14,44 @@
 <div id="lobby">
   <div class="lobby-bg"></div>
   <div class="lobby-content">
-    <h1 class="logo">🃏 Poker Night</h1>
+    <h1 class="logo">♠ Poker Night</h1>
     <p class="logo-sub">Texas Hold'em с друзьями</p>
-
     <div class="lobby-tabs">
       <button class="ltab active" id="tab-create-btn" onclick="switchTab('create')">Создать стол</button>
       <button class="ltab" id="tab-join-btn" onclick="switchTab('join')">Войти в комнату</button>
     </div>
-
-    <!-- CREATE -->
     <div id="tab-create" class="tab-pane active">
-      <div class="form-group">
-        <label>Ваше имя</label>
-        <input type="text" id="create-name" placeholder="Как вас зовут?" maxlength="20">
-      </div>
+      <div class="form-group"><label>Ваше имя</label>
+        <input type="text" id="create-name" placeholder="Как вас зовут?" maxlength="20"></div>
       <div class="settings-grid">
-        <div class="form-group">
-          <label>Бай-ин</label>
-          <input type="number" id="s-buyin" value="1000" min="100" step="100">
-        </div>
-        <div class="form-group">
-          <label>Малый блайнд</label>
-          <input type="number" id="s-sb" value="10" min="1">
-        </div>
-        <div class="form-group">
-          <label>Большой блайнд</label>
-          <input type="number" id="s-bb" value="20" min="2">
-        </div>
-        <div class="form-group">
-          <label>Анте</label>
-          <input type="number" id="s-ante" value="0" min="0">
-        </div>
+        <div class="form-group"><label>Бай-ин</label>
+          <input type="number" id="s-buyin" value="1000" min="100" step="100"></div>
+        <div class="form-group"><label>Малый блайнд</label>
+          <input type="number" id="s-sb" value="10" min="1"></div>
+        <div class="form-group"><label>Большой блайнд</label>
+          <input type="number" id="s-bb" value="20" min="2"></div>
+        <div class="form-group"><label>Анте</label>
+          <input type="number" id="s-ante" value="0" min="0"></div>
       </div>
       <button class="btn-primary" onclick="createRoom()">Создать стол</button>
     </div>
-
-    <!-- JOIN -->
     <div id="tab-join" class="tab-pane">
-      <div class="form-group">
-        <label>Ваше имя</label>
-        <input type="text" id="join-name" placeholder="Как вас зовут?" maxlength="20">
-      </div>
-      <div class="form-group">
-        <label>Код комнаты</label>
-        <input type="text" id="join-code" placeholder="XXXXXX" maxlength="6" style="text-transform:uppercase;letter-spacing:0.3em;font-size:1.4em;">
-      </div>
+      <div class="form-group"><label>Ваше имя</label>
+        <input type="text" id="join-name" placeholder="Как вас зовут?" maxlength="20"></div>
+      <div class="form-group"><label>Код комнаты</label>
+        <input type="text" id="join-code" placeholder="XXXXXX" maxlength="6"
+          style="text-transform:uppercase;letter-spacing:0.3em;font-size:1.4em;"></div>
       <button class="btn-primary" onclick="joinRoom()">Войти</button>
     </div>
-
     <div id="lobby-error" class="error-msg"></div>
   </div>
 </div>
 
 <!-- ═══ GAME ═══ -->
 <div id="game">
-
-  <!-- HEADER -->
   <div id="game-header">
     <div class="header-left">
-      <span class="logo-small">🃏 Poker Night</span>
+      <span class="logo-small">♠ Poker Night</span>
       <span id="hdr-room">ROOM: —</span>
     </div>
     <div class="header-center">
@@ -81,20 +60,15 @@
     </div>
     <div class="header-right">
       <button class="btn-cam" id="cam-btn" onclick="toggleCamera()">📷 Камера</button>
+      <button class="btn-history" onclick="toggleHistory()">📋 История</button>
       <button id="exit-btn" onclick="leaveTable()">✕ Выйти</button>
     </div>
   </div>
 
-  <!-- MAIN CONTENT -->
   <div id="game-body">
-
-    <!-- TABLE SECTION -->
     <div id="table-section">
       <div id="table-area">
-
-        <!-- POKER TABLE -->
         <div id="poker-table">
-          <!-- Community cards + pot in center -->
           <div id="table-center">
             <div id="community-cards"></div>
             <div id="pot-display">
@@ -103,14 +77,11 @@
             </div>
           </div>
         </div>
-
-        <!-- PLAYER SEATS (rendered by JS) -->
         <div id="seats-layer"></div>
-
+        <!-- Winner chip animation target -->
+        <div id="chip-anim-layer"></div>
       </div>
     </div>
-
-    <!-- SIDE PANEL: Chat -->
     <div id="side-panel">
       <div id="chat-panel">
         <div class="panel-title">💬 Чат</div>
@@ -122,32 +93,37 @@
         </div>
       </div>
     </div>
-
   </div>
 
-  <!-- ACTION BAR (bottom) -->
+  <!-- ACTION BAR -->
   <div id="action-bar">
     <div id="my-hand-area">
       <div id="my-cards"></div>
       <div id="my-hand-name"></div>
     </div>
     <div id="action-buttons">
-      <button class="act-btn fold-btn"  id="btn-fold"  onclick="sendAction('fold')">Пас</button>
-      <button class="act-btn check-btn" id="btn-check" onclick="sendAction('check')">Чек</button>
-      <button class="act-btn call-btn"  id="btn-call"  onclick="sendAction('call')">Колл</button>
+      <button class="act-btn fold-btn"  id="btn-fold"  onclick="sendAction('fold')">ФОЛД</button>
+      <button class="act-btn check-btn" id="btn-check" onclick="sendAction('check')">ЧЕК</button>
+      <button class="act-btn call-btn"  id="btn-call"  onclick="sendAction('call')">КОЛЛ</button>
       <div id="raise-group">
-        <input type="range" id="raise-slider" min="0" max="10000" value="0" oninput="onSlider()">
+        <div id="raise-controls">
+          <input type="range" id="raise-slider" min="0" max="10000" value="0" oninput="onSlider()">
+          <div id="raise-presets">
+            <button onclick="setRaisePct(0.5)">½</button>
+            <button onclick="setRaisePct(0.75)">¾</button>
+            <button onclick="setRaisePct(1)">POT</button>
+          </div>
+        </div>
         <div id="raise-amount-display">0</div>
-        <button class="act-btn raise-btn" id="btn-raise" onclick="sendAction('raise')">Рейз</button>
+        <button class="act-btn raise-btn" id="btn-raise" onclick="sendAction('raise')">РЕЙЗ</button>
       </div>
-      <button class="act-btn allin-btn" id="btn-allin" onclick="sendAction('allin')">ALL-IN</button>
+      <button class="act-btn allin-btn" id="btn-allin" onclick="sendAction('allin')">ALL IN</button>
     </div>
     <div id="my-chips-display">
-      <span class="chip-icon">🪙</span>
+      <div class="chip-circle">♦</div>
       <span id="my-chips">1000</span>
     </div>
   </div>
-
 </div>
 
 <!-- WAITING OVERLAY -->
@@ -162,19 +138,27 @@
   </div>
 </div>
 
-<!-- SHOWDOWN OVERLAY -->
-<div id="showdown-overlay" style="display:none">
-  <div class="overlay-box showdown-box">
-    <h2 id="sd-title">Итоги раздачи</h2>
-    <div id="sd-content"></div>
-    <div id="sd-timer-bar"><div id="sd-timer-fill"></div></div>
+<!-- WINNER BANNER (replaces full-screen overlay) -->
+<div id="winner-banner" style="display:none">
+  <div id="winner-banner-inner">
+    <span id="winner-banner-text"></span>
   </div>
+</div>
+
+<!-- HAND HISTORY PANEL -->
+<div id="history-panel" style="display:none">
+  <div id="history-header">
+    <span>📋 История раздач</span>
+    <button onclick="toggleHistory()">✕</button>
+  </div>
+  <div id="history-list"></div>
 </div>
 
 <!-- ERROR TOAST -->
 <div id="toast"></div>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="sounds.js"></script>
 <script src="client.js"></script>
 </body>
 </html>
