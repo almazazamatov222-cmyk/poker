@@ -10,7 +10,6 @@
 </head>
 <body>
 
-<!-- ═══ LOBBY ═══ -->
 <div id="lobby">
   <div class="lobby-bg"></div>
   <div class="lobby-content">
@@ -40,14 +39,13 @@
         <input type="text" id="join-name" placeholder="Как вас зовут?" maxlength="20"></div>
       <div class="form-group"><label>Код комнаты</label>
         <input type="text" id="join-code" placeholder="XXXXXX" maxlength="6"
-          style="text-transform:uppercase;letter-spacing:0.3em;font-size:1.4em;"></div>
+          style="text-transform:uppercase;letter-spacing:.3em;font-size:1.4em;"></div>
       <button class="btn-primary" onclick="joinRoom()">Войти</button>
     </div>
     <div id="lobby-error" class="error-msg"></div>
   </div>
 </div>
 
-<!-- ═══ GAME ═══ -->
 <div id="game">
   <div id="game-header">
     <div class="header-left">
@@ -78,7 +76,6 @@
           </div>
         </div>
         <div id="seats-layer"></div>
-        <!-- Winner chip animation target -->
         <div id="chip-anim-layer"></div>
       </div>
     </div>
@@ -95,12 +92,8 @@
     </div>
   </div>
 
-  <!-- ACTION BAR -->
+  <!-- ACTION BAR — no more dead left block -->
   <div id="action-bar">
-    <div id="my-hand-area">
-      <div id="my-cards"></div>
-      <div id="my-hand-name"></div>
-    </div>
     <div id="action-buttons">
       <button class="act-btn fold-btn"  id="btn-fold"  onclick="sendAction('fold')">ФОЛД</button>
       <button class="act-btn check-btn" id="btn-check" onclick="sendAction('check')">ЧЕК</button>
@@ -126,7 +119,6 @@
   </div>
 </div>
 
-<!-- WAITING OVERLAY -->
 <div id="waiting-overlay">
   <div class="overlay-box">
     <h2>Ожидание игроков</h2>
@@ -138,14 +130,10 @@
   </div>
 </div>
 
-<!-- WINNER BANNER (replaces full-screen overlay) -->
 <div id="winner-banner" style="display:none">
-  <div id="winner-banner-inner">
-    <span id="winner-banner-text"></span>
-  </div>
+  <div id="winner-banner-inner"><span id="winner-banner-text"></span></div>
 </div>
 
-<!-- HAND HISTORY PANEL -->
 <div id="history-panel" style="display:none">
   <div id="history-header">
     <span>📋 История раздач</span>
@@ -154,7 +142,6 @@
   <div id="history-list"></div>
 </div>
 
-<!-- ERROR TOAST -->
 <div id="toast"></div>
 
 <script src="/socket.io/socket.io.js"></script>

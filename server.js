@@ -186,19 +186,19 @@ function startHand(room) {
 
   const sbAmt = Math.min(sb.chips, room.settings.smallBlind);
   sb.chips -= sbAmt; sb.bet = sbAmt; room.pot += sbAmt;
-  sb.blindLabel = 'SB';
+  sb.blindLabel = 'МБ';
   if (!sb.chips) sb.allIn = true;
 
   const bbAmt = Math.min(bb.chips, room.settings.bigBlind);
   bb.chips -= bbAmt; bb.bet = bbAmt; room.pot += bbAmt;
-  bb.blindLabel = 'BB';
+  bb.blindLabel = 'ББ';
   if (!bb.chips) bb.allIn = true;
 
   room.currentBet = bbAmt;
 
   // Dealer label
   const dealer = eligible[dIdx];
-  dealer.blindLabel = dealer.blindLabel ? dealer.blindLabel + '/D' : 'D';
+  dealer.blindLabel = dealer.blindLabel ? dealer.blindLabel + '/Д' : 'Д';
 
   // First to act
   const firstPlayer = eligible[firstIdx];
