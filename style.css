@@ -14,13 +14,47 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
 
 /* ═══ LOBBY ═══ */
 #lobby{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100;}
-.lobby-bg{position:absolute;inset:0;
-  background:radial-gradient(ellipse 80% 60% at 50% 40%,rgba(30,80,30,.25),transparent),
-             radial-gradient(ellipse 60% 80% at 20% 80%,rgba(200,168,75,.06),transparent),var(--bg);}
+.lobby-bg{
+  position:absolute;inset:0;
+  background:
+    /* top-left warm lamp */
+    radial-gradient(ellipse 30% 40% at 15% 8%,  rgba(210,120,20,.55),  transparent),
+    /* top-right warm lamp */
+    radial-gradient(ellipse 30% 40% at 85% 8%,  rgba(200,110,15,.5),   transparent),
+    /* center-top subtle glow */
+    radial-gradient(ellipse 50% 35% at 50% 5%,  rgba(180,90,10,.25),   transparent),
+    /* floor green felt glow */
+    radial-gradient(ellipse 90% 30% at 50% 100%,rgba(15,50,15,.7),     transparent),
+    /* deep dark center */
+    radial-gradient(ellipse 70% 60% at 50% 45%,rgba(8,10,5,.0),        transparent),
+    /* smoke/haze right */
+    radial-gradient(ellipse 40% 50% at 80% 50%, rgba(30,20,10,.3),      transparent),
+    /* base */
+    linear-gradient(180deg, #0a080a 0%, #0d0b08 40%, #080c06 100%);
+}
+/* animated smoke particles overlay */
+.lobby-bg::before {
+  content:'';
+  position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 20% 35% at 70% 35%, rgba(180,130,60,.08), transparent),
+    radial-gradient(ellipse 15% 25% at 30% 55%, rgba(160,110,40,.06), transparent);
+  animation:smokeShift 8s ease-in-out infinite alternate;
+}
+.lobby-bg::after {
+  content:'';
+  position:absolute;inset:0;
+  /* vignette */
+  background:radial-gradient(ellipse 100% 100% at 50% 50%, transparent 40%, rgba(0,0,0,.75) 100%);
+}
+@keyframes smokeShift {
+  0%  { opacity:.6; transform:translateY(0) scale(1); }
+  100%{ opacity:1;  transform:translateY(-12px) scale(1.04); }
+}
 .lobby-content{
   position:relative;z-index:1;
-  background:linear-gradient(160deg,rgba(13,15,30,.98),rgba(8,10,22,.98));
-  border:1px solid rgba(200,168,75,.25);border-radius:20px;
+  background:linear-gradient(160deg,rgba(8,7,5,.92),rgba(5,6,3,.90));
+  border:1px solid rgba(180,110,30,.4);border-radius:20px;
   padding:36px 40px;width:440px;
   box-shadow:0 0 80px rgba(0,0,0,.9),0 0 40px rgba(200,168,75,.06);}
 .logo{font-family:'Playfair Display',serif;font-size:2.2em;font-weight:900;
