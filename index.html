@@ -10,6 +10,7 @@
 </head>
 <body>
 
+<!-- LOBBY -->
 <div id="lobby">
   <div class="lobby-bg"></div>
   <div class="lobby-content">
@@ -46,79 +47,85 @@
   </div>
 </div>
 
+<!-- GAME -->
 <div id="game">
+
+  <!-- TOP BAR -->
   <div id="game-header">
-    <div class="header-left">
+    <div class="hdr-l">
       <span class="logo-small">♠ Poker Night</span>
-      <span id="hdr-room">ROOM: —</span>
+      <span id="hdr-room"></span>
     </div>
-    <div class="header-center">
-      <span id="hdr-phase">—</span>
-      <span id="hdr-hand">Раздача #0</span>
+    <div class="hdr-c">
+      <span id="hdr-phase"></span>
+      <span id="hdr-hand"></span>
+      <span id="hdr-pot">БАНК <b id="pot-amount">0</b></span>
     </div>
-    <div class="header-right">
-      <button class="btn-cam" id="cam-btn" onclick="toggleCamera()">📷 Камера</button>
-      <button class="btn-history" onclick="toggleHistory()">📋 История</button>
-      <button id="exit-btn" onclick="leaveTable()">✕ Выйти</button>
-    </div>
-  </div>
-
-  <div id="game-body">
-    <div id="table-section">
-      <div id="table-area">
-        <div id="poker-table">
-          <div id="table-center">
-            <div id="community-cards"></div>
-            <div id="pot-display">
-              <span class="pot-label">БАНК</span>
-              <span id="pot-amount">0</span>
-            </div>
-          </div>
-        </div>
-        <div id="seats-layer"></div>
-        <div id="chip-anim-layer"></div>
-      </div>
-    </div>
-    <div id="side-panel">
-      <div id="chat-panel">
-        <div class="panel-title">💬 Чат</div>
-        <div id="chat-messages"></div>
-        <div id="chat-input-row">
-          <input type="text" id="chat-input" placeholder="Сообщение..." maxlength="150"
-            onkeydown="if(event.key==='Enter')sendChat()">
-          <button onclick="sendChat()">→</button>
-        </div>
-      </div>
+    <div class="hdr-r">
+      <button class="hbtn" id="cam-btn" onclick="toggleCamera()">📷 Камера</button>
+      <button class="hbtn" onclick="toggleHistory()">📋 История</button>
+      <button class="hbtn hbtn-exit" onclick="leaveTable()">✕</button>
     </div>
   </div>
 
-  <!-- ACTION BAR — no more dead left block -->
+  <!-- MAIN: table + seats fill everything -->
+  <div id="game-main">
+
+    <!-- The oval table -->
+    <div id="table-wrap">
+      <div id="poker-table">
+        <div id="table-center">
+          <div id="community-cards"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Player tiles — absolutely positioned, JS sets positions -->
+    <div id="players-layer"></div>
+
+    <!-- Chip animations -->
+    <div id="chip-anim-layer"></div>
+
+  </div>
+
+  <!-- BOTTOM ACTION BAR -->
   <div id="action-bar">
-    <div id="action-buttons">
+    <!-- My cards shown here -->
+    <div id="my-hole-cards"></div>
+    <div id="my-combo-label"></div>
+
+    <!-- Buttons -->
+    <div id="action-btns">
       <button class="act-btn fold-btn"  id="btn-fold"  onclick="sendAction('fold')">ФОЛД</button>
       <button class="act-btn check-btn" id="btn-check" onclick="sendAction('check')">ЧЕК</button>
       <button class="act-btn call-btn"  id="btn-call"  onclick="sendAction('call')">КОЛЛ</button>
       <div id="raise-group">
-        <div id="raise-controls">
+        <div id="raise-left">
           <input type="range" id="raise-slider" min="0" max="10000" value="0" oninput="onSlider()">
           <div id="raise-presets">
+            <button onclick="setRaisePct(0.33)">⅓</button>
             <button onclick="setRaisePct(0.5)">½</button>
             <button onclick="setRaisePct(0.75)">¾</button>
             <button onclick="setRaisePct(1)">POT</button>
+            <button onclick="setRaisePct(2)">2x</button>
           </div>
         </div>
-        <div id="raise-amount-display">0</div>
+        <div id="raise-val">0</div>
         <button class="act-btn raise-btn" id="btn-raise" onclick="sendAction('raise')">РЕЙЗ</button>
       </div>
       <button class="act-btn allin-btn" id="btn-allin" onclick="sendAction('allin')">ALL IN</button>
     </div>
-    <div id="my-chips-display">
-      <div class="chip-circle">♦</div>
-      <span id="my-chips">1000</span>
+
+    <!-- My chips -->
+    <div id="my-stack">
+      <div class="chip-pip"></div>
+      <span id="my-chips">0</span>
     </div>
   </div>
+
 </div>
 
+<!-- WAITING -->
 <div id="waiting-overlay">
   <div class="overlay-box">
     <h2>Ожидание игроков</h2>
@@ -130,12 +137,14 @@
   </div>
 </div>
 
+<!-- WINNER BANNER -->
 <div id="winner-banner" style="display:none">
-  <div id="winner-banner-inner"><span id="winner-banner-text"></span></div>
+  <div id="winner-inner"><span id="winner-text"></span></div>
 </div>
 
+<!-- HISTORY PANEL -->
 <div id="history-panel" style="display:none">
-  <div id="history-header">
+  <div id="history-hdr">
     <span>📋 История раздач</span>
     <button onclick="toggleHistory()">✕</button>
   </div>
