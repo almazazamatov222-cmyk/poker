@@ -1,26 +1,22 @@
 const socket = io();
 let gameState=null, myId=null, localStream=null;
-let peers={}, raiseTarget=0, cameraOn=false;
-let handHistory=[], bannerTimer=null;
+let peers={}, raiseTarget=0, raiseMin=0, raiseMax=0, cameraOn=false;
+let handHistory=[], bannerTimer=null, raisePanelOpen=false;
 
 const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
 
-// ─── Seat positions: % of #game-main (viewport minus header/bar) ───────────
-// Layout: 10 seats arranged as an ellipse around the table
-// Positions are % of container width/height
-const SEATS = [
-  // Bottom row (closest to action bar)
-  {x:50,   y:88},   // 0 = me (center bottom)
-  {x:71,   y:83},   // 1 right of me
-  {x:88,   y:72},   // 2 far right
-  {x:92,   y:55},   // 3 right middle
-  {x:88,   y:35},   // 4 upper right
-  {x:70,   y:18},   // 5 top right
-  {x:50,   y:12},   // 6 top center
-  {x:30,   y:18},   // 7 top left
-  {x:12,   y:35},   // 8 upper left
-  {x:8,    y:55},   // 9 left middle
-  // {x:12, y:72},  // if >10 needed
+// ─── Seat positions (% of #arena w/h), 10 seats around oval ─────────────────
+const SEATS=[
+  {x:50,   y:86},   // 0 me — bottom center
+  {x:70,   y:80},   // 1
+  {x:86,   y:67},   // 2
+  {x:90,   y:50},   // 3
+  {x:86,   y:33},   // 4
+  {x:70,   y:20},   // 5
+  {x:50,   y:14},   // 6
+  {x:30,   y:20},   // 7
+  {x:14,   y:33},   // 8
+  {x:10,   y:50},   // 9
 ];
 
 // ═══ LOBBY ═══
@@ -44,7 +40,7 @@ function joinRoom(){
 }
 function startGame(){ socket.emit('start-game'); }
 function leaveTable(){ socket.disconnect(); location.reload(); }
-function lerr(m){ el('lobby-error').textContent=m; setTimeout(()=>el('lobby-error').textContent='',3000); }
+function lerr(m){ el('lobby-error').textContent=m; setTimeout(()=>el('lobby-error').textContent='',3e3); }
 
 // ═══ SOCKETS ═══
 socket.on('joined',({roomId})=>{
@@ -58,8 +54,8 @@ socket.on('joined',({roomId})=>{
 socket.on('state',state=>{
   if(state.myId) myId=state.myId;
   const prev=gameState; gameState=state;
-  sfx(state,prev);
-  renderGame(state);
+  playSfx(state,prev);
+  render(state);
   if(state.phase==='showdown'&&prev?.phase!=='showdown') saveHist(state);
 });
 socket.on('peer-joined',async({peerId})=>{
@@ -77,26 +73,19 @@ socket.on('offer',async({from,sdp})=>{
     socket.emit('answer',{to:from,sdp:a});
   }catch(e){}
 });
-socket.on('answer',async({from,sdp})=>{
-  try{ if(peers[from]) await peers[from].setRemoteDescription(new RTCSessionDescription(sdp)); }catch(e){}
-});
-socket.on('ice',async({from,candidate})=>{
-  try{ if(peers[from]) await peers[from].addIceCandidate(new RTCIceCandidate(candidate)); }catch(e){}
-});
-socket.on('chat',({name,msg})=>{
-  // No chat panel in this layout — show as toast briefly or skip
-});
+socket.on('answer',async({from,sdp})=>{ try{if(peers[from])await peers[from].setRemoteDescription(new RTCSessionDescription(sdp));}catch(e){} });
+socket.on('ice',async({from,candidate})=>{ try{if(peers[from])await peers[from].addIceCandidate(new RTCIceCandidate(candidate));}catch(e){} });
 socket.on('err',toast);
 
-// ═══ SOUNDS ═══
-function sfx(s,prev){
+// ═══ SFX ═══
+function playSfx(s,prev){
   if(!prev) return;
   if(prev.phase==='waiting'&&s.phase==='preflop'){ SFX.shuffle(); return; }
   const myT=s.players[s.currentIdx]?.id===myId, wasT=prev.players?.[prev.currentIdx]?.id===myId;
   if(myT&&!wasT) SFX.yourTurn();
   const nc=(s.community||[]).length-(prev.community||[]).length;
   if(nc>0&&s.phase!=='showdown') for(let i=0;i<nc;i++) setTimeout(()=>SFX.deal(),i*150+80);
-  if(s.phase==='showdown'&&prev.phase!=='showdown') setTimeout(()=>SFX.win(),400);
+  if(s.phase==='showdown'&&prev.phase!=='showdown') setTimeout(()=>SFX.win(),350);
 }
 
 // ═══ WEBRTC ═══
@@ -107,58 +96,52 @@ function mkPC(pid){
   pc.onnegotiationneeded=async()=>{
     try{const o=await pc.createOffer();await pc.setLocalDescription(o);socket.emit('offer',{to:pid,sdp:o});}catch(e){}
   };
-  pc.ontrack=e=>{ pc._stream=e.streams[0]; showVid(pid,e.streams[0],false); };
-  pc.onconnectionstatechange=()=>{
-    if(['failed','closed'].includes(pc.connectionState)){ pc.close(); delete peers[pid]; }
-  };
+  pc.ontrack=e=>{ pc._stream=e.streams[0]; attachVid(pid,e.streams[0],false); };
+  pc.onconnectionstatechange=()=>{ if(['failed','closed'].includes(pc.connectionState)){pc.close();delete peers[pid];} };
   return pc;
 }
-
-function showVid(pid,stream,muted){
-  const tile=document.querySelector(`.ptile[data-pid="${pid}"]`); if(!tile) return;
-  const box=tile.querySelector('.ptile-video'); if(!box) return;
-  let vid=box.querySelector('video.ptile-vid');
+function attachVid(pid,stream,muted){
+  const av=document.querySelector(`.seat[data-pid="${pid}"] .seat-av`); if(!av) return;
+  let vid=av.querySelector('video.seat-vid');
   if(!vid){
-    vid=document.createElement('video'); vid.className='ptile-vid';
-    vid.autoplay=true; vid.playsinline=true; box.appendChild(vid);
+    vid=document.createElement('video'); vid.className='seat-vid';
+    vid.autoplay=true; vid.playsinline=true; av.appendChild(vid);
   }
   vid.muted=muted; if(vid.srcObject!==stream) vid.srcObject=stream;
   vid.style.display='block';
-  const av=box.querySelector('.ptile-avatar'); if(av) av.style.display='none';
+  const ini=av.querySelector('.seat-initials'); if(ini) ini.style.display='none';
 }
-
 async function toggleCamera(){
   const btn=el('cam-btn');
   if(!cameraOn){
     try{
       localStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
       cameraOn=true; btn.textContent='📷 ВКЛ'; btn.style.color='#4caf50';
-      showVid(myId,localStream,true);
-      // Offer to all existing peers
-      for(const pid in peers){
-        localStream.getTracks().forEach(t=>{ try{peers[pid].addTrack(t,localStream);}catch(e){} });
-        // onnegotiationneeded will fire and send offer automatically
-      }
+      attachVid(myId,localStream,true);
+      for(const pid in peers) localStream.getTracks().forEach(t=>{ try{peers[pid].addTrack(t,localStream);}catch(e){} });
     }catch(e){ toast('Нет доступа к камере'); }
   } else {
     localStream.getTracks().forEach(t=>t.stop());
     localStream=null; cameraOn=false; btn.textContent='📷 Камера'; btn.style.color='';
-    const tile=document.querySelector(`.ptile[data-pid="${myId}"]`);
-    if(tile){
-      const vid=tile.querySelector('video.ptile-vid'); if(vid) vid.style.display='none';
-      const av=tile.querySelector('.ptile-avatar'); if(av) av.style.display='';
+    const av=document.querySelector(`.seat[data-pid="${myId}"] .seat-av`);
+    if(av){
+      const vid=av.querySelector('video'); if(vid) vid.style.display='none';
+      const ini=av.querySelector('.seat-initials'); if(ini) ini.style.display='';
     }
   }
 }
 
 // ═══ RENDER ═══
-function renderGame(s){
+const PAL=['#c0392b','#2980b9','#27ae60','#c49a06','#8e44ad','#16a085','#e67e22','#1a5276','#d35400','#117a65'];
+function abg(n){ return PAL[(n.charCodeAt(0)+(n.charCodeAt(1)||0))%PAL.length]; }
+
+function render(s){
   if(s.phase==='waiting'){
     el('waiting-overlay').style.display='flex';
     const me=s.players.find(p=>p.id===myId);
     el('ov-players').innerHTML=s.players.map(p=>
-      `<div class="ov-player-chip${p.isHost?' host':''}">${esc(p.name)}</div>`).join('');
-    show('ov-start-btn',!!me?.isHost); show('ov-waiting-msg',!me?.isHost);
+      `<div class="opc${p.isHost?' host':''}">${esc(p.name)}</div>`).join('');
+    sh('ov-start',!!me?.isHost); sh('ov-wait-msg',!me?.isHost);
     return;
   }
   el('waiting-overlay').style.display='none';
@@ -168,16 +151,18 @@ function renderGame(s){
   el('hdr-phase').textContent=PH[s.phase]||s.phase;
   el('hdr-hand').textContent='Раздача #'+s.handNum;
   el('pot-amount').textContent=s.pot;
-  el('community-cards').innerHTML=(s.community||[]).map(c=>ch(c)).join('');
+  el('community-cards').innerHTML=(s.community||[]).map(c=>cd(c)).join('');
 
-  renderTiles(s);
+  renderSeats(s);
 
   const me=s.players.find(p=>p.id===myId);
-  el('my-hole-cards').innerHTML=(me?.inHand&&!me.folded&&me.cards)?me.cards.map(c=>ch(c,false,'large')).join(''):'';
-  el('my-combo-label').textContent=me?.handName||'';
+  // My hole cards — shown on table
+  el('my-cards').innerHTML=(me?.inHand&&!me.folded&&me.cards)?me.cards.map(c=>cd(c,false,'large')).join(''):'';
+  el('my-combo').textContent=me?.handName||'';
   el('my-chips').textContent=me?.chips??'';
   renderActions(s,me);
 
+  // Banner
   if(s.phase==='showdown'){
     if(el('winner-banner').style.display!=='flex'){ showBanner(s); animChips(s); }
   } else {
@@ -185,20 +170,13 @@ function renderGame(s){
   }
 }
 
-// ─── Player Tiles ────────────────────────────────────────────────────────────
-const PAL=['#c0392b','#2980b9','#27ae60','#c49a06','#8e44ad','#16a085','#e67e22','#1a5276','#d35400','#117a65'];
-function abg(name){ return PAL[(name.charCodeAt(0)+(name.charCodeAt(1)||0))%PAL.length]; }
-
-function renderTiles(s){
-  const layer=el('players-layer');
+// ─── Seats ───────────────────────────────────────────────────────────────────
+function renderSeats(s){
+  const layer=el('seats');
   const mi=s.players.findIndex(p=>p.id===myId);
   const ord=mi<0?s.players:[...s.players.slice(mi),...s.players.slice(0,mi)];
 
-  // Remove tiles for players no longer present
-  layer.querySelectorAll('.ptile').forEach(t=>{
-    if(!ord.find(p=>p.id===t.dataset.pid)) t.remove();
-  });
-  // Remove orphan bet chips
+  // Remove bet chips
   layer.querySelectorAll('.bet-chip').forEach(c=>c.remove());
 
   ord.forEach((p,idx)=>{
@@ -206,105 +184,169 @@ function renderTiles(s){
     const pos=SEATS[idx];
     const isMe=p.id===myId, isAct=s.curId===p.id;
 
-    // Get or create tile
-    let tile=layer.querySelector(`.ptile[data-pid="${p.id}"]`);
-    if(!tile){
-      tile=document.createElement('div');
-      tile.className='ptile'; tile.dataset.pid=p.id;
-      tile.innerHTML=`
-        <div class="ptile-video">
-          <div class="ptile-avatar" style="background:${abg(p.name)}">${esc(p.name.slice(0,2).toUpperCase())}</div>
-          <div class="ptile-status"></div>
-          <div class="ptile-cards"></div>
+    let seat=layer.querySelector(`.seat[data-pid="${p.id}"]`);
+    const isNew=!seat;
+    if(isNew){
+      seat=document.createElement('div'); seat.className='seat'; seat.dataset.pid=p.id;
+      seat.innerHTML=`
+        <div class="seat-av">
+          <div class="seat-initials" style="background:${abg(p.name)}">${esc(p.name.slice(0,2).toUpperCase())}</div>
         </div>
-        <div class="ptile-info">
-          <div class="ptile-name"></div>
-          <div class="ptile-chips"><span class="chip-pip"></span><span class="chips-val"></span></div>
-          <div class="ptile-combo"></div>
+        <div class="seat-badges"></div>
+        <div class="seat-cards"></div>
+        <div class="seat-label">
+          <div class="seat-name"></div>
+          <div class="seat-chips"><span class="sdot"></span><span class="cv"></span></div>
+          <div class="seat-action"></div>
+          <div class="seat-combo"></div>
         </div>`;
-      layer.appendChild(tile);
+      layer.appendChild(seat);
     }
 
-    // Update classes
-    tile.className='ptile'+(isMe?' is-me':'')+(isAct?' active-turn':'')
+    // Classes
+    seat.className='seat'+(isMe?' is-me':'')+(isAct?' active':'')
       +(p.folded?' folded':'')+(p.winner?' winner':'');
-    tile.style.left=pos.x+'%'; tile.style.top=pos.y+'%';
+    seat.style.left=pos.x+'%'; seat.style.top=pos.y+'%';
 
-    // Name & chips
-    tile.querySelector('.ptile-name').textContent=p.name+(p.isHost?' 👑':'');
-    tile.querySelector('.chips-val').textContent=p.chips;
-    tile.querySelector('.ptile-combo').textContent=(p.handName&&p.inHand&&!p.folded)?p.handName:'';
+    // Info
+    seat.querySelector('.seat-name').textContent=p.name+(p.isHost?' 👑':'');
+    seat.querySelector('.cv').textContent=p.chips;
+    seat.querySelector('.seat-action').textContent=actionLabel(p,s);
+    seat.querySelector('.seat-combo').textContent=(p.handName&&p.inHand&&!p.folded)?p.handName:'';
 
     // Badges
-    const badges=tile.querySelector('.ptile-status');
+    const badges=seat.querySelector('.seat-badges');
     badges.innerHTML=[
-      p.blindLabel?`<span class="badge badge-blind">${p.blindLabel}</span>`:'',
-      p.allIn?`<span class="badge badge-allin">ВСЁ</span>`:'',
+      p.blindLabel?.includes('Д')&&p.blindLabel?.length===1 ? `<span class="badge badge-d">Д</span>` : '',
+      p.blindLabel?.includes('МБ') ? `<span class="badge badge-mb">МБ</span>` : '',
+      p.blindLabel?.includes('ББ') ? `<span class="badge badge-bb">ББ</span>` : '',
+      p.blindLabel?.includes('Д')&&p.blindLabel?.length>1 ? `<span class="badge badge-d">Д</span>` : '',
+      p.allIn ? `<span class="badge badge-allin">ALL IN</span>` : '',
     ].join('');
 
-    // Cards inside tile
-    const cards=tile.querySelector('.ptile-cards');
-    const showRev=isMe||s.phase==='showdown';
-    cards.innerHTML=tileCards(p,showRev);
+    // Opponent cards — shown ABOVE avatar (away from table center for bottom seats, toward center for top)
+    const cardsDiv=seat.querySelector('.seat-cards');
+    cardsDiv.innerHTML=seatCards(p,isMe||s.phase==='showdown');
+    // Position cards: offset toward table center
+    const cx=50, cy=50;
+    const ang=Math.atan2(cy-pos.y, cx-pos.x);
+    const dist=36;
+    cardsDiv.style.position='absolute';
+    cardsDiv.style.left=(Math.cos(ang)*dist)+'px';
+    cardsDiv.style.top=(Math.sin(ang)*dist)+'px';
+    cardsDiv.style.transform='translate(-50%,-50%)';
 
     // Restore video
-    if(isMe&&localStream) showVid(myId,localStream,true);
-    else if(peers[p.id]?._stream) showVid(p.id,peers[p.id]._stream,false);
+    if(isMe&&localStream) attachVid(myId,localStream,true);
+    else if(peers[p.id]?._stream) attachVid(p.id,peers[p.id]._stream,false);
 
     // Bet chip
     if(p.bet>0){
       const bc=document.createElement('div'); bc.className='bet-chip';
-      const bx=pos.x+(50-pos.x)*0.38, by=pos.y+(50-pos.y)*0.38;
+      const bx=pos.x+(50-pos.x)*0.4, by=pos.y+(50-pos.y)*0.4;
       bc.style.left=bx+'%'; bc.style.top=by+'%'; bc.textContent=p.bet;
       layer.appendChild(bc);
     }
   });
+
+  // Remove seats no longer in game
+  layer.querySelectorAll('.seat').forEach(seat=>{
+    if(!ord.find(p=>p.id===seat.dataset.pid)) seat.remove();
+  });
 }
 
-function tileCards(p,reveal){
-  const b='<div class="card face-down small"></div>';
+function actionLabel(p,s){
+  if(!p.inHand) return '';
+  if(p.folded) return 'Фолд';
+  if(p.allIn) return 'All In';
+  if(s.curId===p.id) return '⏳ Ход...';
+  if(p.bet>0) return p.bet+'';
+  return '';
+}
+
+function seatCards(p,reveal){
+  const b='<div class="card face-down"></div>';
   if(!p.inHand) return '';
   if(p.folded) return b+b;
   if(!reveal||!p.cards||p.cards.every(c=>!c)) return b+b;
-  return p.cards.map(c=>ch(c,false,'small')).join('');
+  return p.cards.map(c=>cd(c)).join('');
 }
 
-// ─── Actions ────────────────────────────────────────────────────────────────
+// ─── Actions ─────────────────────────────────────────────────────────────────
 function renderActions(s,me){
   const myT=!!(me&&s.curId===myId&&!me.folded&&!me.allIn);
-  el('action-bar').classList.toggle('my-turn',myT);
-  sBtn('btn-fold', myT);
-  sBtn('btn-check',myT&&me.bet>=s.currentBet);
-  sBtn('btn-call', myT&&me.bet<s.currentBet);
-  sFlex('raise-group',myT&&me.chips>0);
-  sBtn('btn-allin',myT);
-  if(!myT) return;
-  const call=Math.min(s.currentBet-me.bet,me.chips);
-  el('btn-call').textContent=`КОЛЛ ${call}`;
+  el('actionbar').classList.toggle('my-turn',myT);
+
+  sBtn('btn-fold',     myT);
+  sBtn('btn-check',    myT&&me.bet>=s.currentBet);
+  sBtn('btn-call',     myT&&me.bet<s.currentBet);
+  sBtn('btn-allin',    myT);
+
+  // Raise button: show if player has more chips than needed to call
+  const callAmt=Math.min(s.currentBet-me.bet, me.chips);
+  const canRaise=myT&&me.chips>callAmt;
+  sBtn('btn-raise-open', canRaise);
+
+  if(!myT){
+    closeRaise();
+    return;
+  }
+
+  if(me.bet<s.currentBet){
+    el('btn-call').textContent=`КОЛЛ ${callAmt}`;
+  }
+
+  // Compute raise range
   const bb=s.settings?.bigBlind||20;
-  const minR=Math.min(s.currentBet+(s.lastRaise||bb),me.chips+me.bet);
-  const maxR=me.chips+me.bet;
-  if(!raiseTarget||raiseTarget<minR) raiseTarget=minR;
-  if(raiseTarget>maxR) raiseTarget=maxR;
+  raiseMin=Math.min(s.currentBet+(s.lastRaise||bb), me.chips+me.bet);
+  raiseMax=me.chips+me.bet;
+  if(raiseTarget<raiseMin) raiseTarget=raiseMin;
+  if(raiseTarget>raiseMax) raiseTarget=raiseMax;
+
   const sl=el('raise-slider');
-  sl.min=minR; sl.max=maxR; sl.step=bb; sl.value=raiseTarget;
-  sl.dataset.pot=s.pot; sl.dataset.min=minR; sl.dataset.max=maxR;
-  el('raise-val').textContent=raiseTarget;
+  sl.min=raiseMin; sl.max=raiseMax; sl.step=bb; sl.value=raiseTarget;
+  sl.dataset.pot=s.pot;
+  el('rp-amount').textContent=raiseTarget;
 }
-function setRaisePct(p){
-  const sl=el('raise-slider'); if(!sl) return;
-  const pot=+sl.dataset.pot||0,mn=+sl.dataset.min||0,mx=+sl.dataset.max||0;
-  raiseTarget=Math.max(mn,Math.min(mx,Math.round(pot*p)));
-  sl.value=raiseTarget; el('raise-val').textContent=raiseTarget;
+
+function toggleRaisePanel(){
+  raisePanelOpen=!raisePanelOpen;
+  el('raise-panel').classList.toggle('open',raisePanelOpen);
+  el('btn-raise-open').textContent=raisePanelOpen?'РЕЙЗ ▼':'РЕЙЗ ▲';
 }
-function onSlider(){ raiseTarget=+el('raise-slider').value; el('raise-val').textContent=raiseTarget; }
+function closeRaise(){
+  raisePanelOpen=false;
+  el('raise-panel').classList.remove('open');
+  el('btn-raise-open').textContent='РЕЙЗ ▲';
+}
+
+function setR(v){
+  const sl=el('raise-slider');
+  const pot=+(sl.dataset.pot||0);
+  if(v==='min') raiseTarget=raiseMin;
+  else if(v==='allin') raiseTarget=raiseMax;
+  else raiseTarget=Math.max(raiseMin,Math.min(raiseMax,Math.round(pot*v)));
+  sl.value=raiseTarget; el('rp-amount').textContent=raiseTarget;
+}
+function sliderR(){ raiseTarget=+el('raise-slider').value; el('rp-amount').textContent=raiseTarget; }
+function nudgeR(d){
+  const bb=gameState?.settings?.bigBlind||20;
+  raiseTarget=Math.max(raiseMin,Math.min(raiseMax,raiseTarget+d*bb));
+  el('raise-slider').value=raiseTarget; el('rp-amount').textContent=raiseTarget;
+}
+function doRaise(){
+  SFX.chip();
+  socket.emit('action',{action:'raise',amount:raiseTarget});
+  closeRaise();
+}
 function sendAction(a){
   if(a==='fold') SFX.fold(); else if(a==='check') SFX.check();
   else if(a==='allin') SFX.allin(); else SFX.chip();
-  socket.emit('action',a==='raise'?{action:a,amount:raiseTarget}:{action:a});
+  socket.emit('action',{action:a});
+  closeRaise();
 }
 
-// ─── Winner banner ───────────────────────────────────────────────────────────
+// ─── Banner + chips ───────────────────────────────────────────────────────────
 function showBanner(s){
   clearTimeout(bannerTimer);
   const w=s.showdown?.winners||s.players.filter(p=>p.winner); if(!w.length) return;
@@ -315,24 +357,24 @@ function showBanner(s){
 }
 function animChips(s){
   const w=s.showdown?.winners||s.players.filter(p=>p.winner); if(!w.length) return;
-  const layer=el('chip-anim-layer'); layer.innerHTML='';
+  const layer=el('chip-layer'); layer.innerHTML='';
   const mi=s.players.findIndex(p=>p.id===myId);
   const ord=mi<0?s.players:[...s.players.slice(mi),...s.players.slice(0,mi)];
   const wi=ord.findIndex(p=>p.id===w[0].id); if(wi<0||wi>=SEATS.length) return;
-  const wp=SEATS[wi], main=el('game-main'), rect=main.getBoundingClientRect();
-  const tx=(wp.x/100)*rect.width, ty=(wp.y/100)*rect.height;
-  const cnt=Math.min(16,Math.max(4,Math.ceil(s.pot/80)));
+  const wp=SEATS[wi], arena=el('arena'), r=arena.getBoundingClientRect();
+  const tx=(wp.x/100)*r.width, ty=(wp.y/100)*r.height;
+  const cnt=Math.min(18,Math.max(4,Math.ceil(s.pot/80)));
   SFX.chipSlide();
   for(let i=0;i<cnt;i++) setTimeout(()=>{
     const c=document.createElement('div'); c.className='flying-chip';
-    const sx=rect.width/2+Math.random()*80-40, sy=rect.height/2+Math.random()*40-20;
+    const sx=r.width/2+Math.random()*80-40, sy=r.height/2+Math.random()*40-20;
     c.style.left=sx+'px'; c.style.top=sy+'px'; layer.appendChild(c);
     requestAnimationFrame(()=>{ c.style.transform=`translate(${tx-sx}px,${ty-sy}px)`; c.style.opacity='0'; });
     setTimeout(()=>c.remove(),650);
   },i*40);
 }
 
-// ─── History ─────────────────────────────────────────────────────────────────
+// ─── History ──────────────────────────────────────────────────────────────────
 function saveHist(s){
   const me=s.players.find(p=>p.id===myId); if(!me) return;
   const res=s.showdown, w=res?.winners||s.players.filter(p=>p.winner);
@@ -343,27 +385,25 @@ function saveHist(s){
   rehist();
 }
 function rehist(){
-  const list=el('history-list'); if(!list) return;
+  const list=el('hist-list'); if(!list) return;
   list.innerHTML=handHistory.map(h=>`
-    <div class="history-entry${h.won?' h-won':''}">
-      <div class="h-header"><span class="h-num">Раздача #${h.handNum}</span>
-        <span class="${h.won?'h-win':'h-loss'}">${h.won?'✓ ПОБЕДА':'✗ ПОРАЖЕНИЕ'}</span></div>
-      <div class="h-row"><span class="h-lbl">Рука:</span>${h.myCards.map(c=>ch(c,false,'small')).join('')}
-        ${h.myHand?`<span class="h-hn">${h.myHand}</span>`:''}</div>
-      ${h.community.length?`<div class="h-row"><span class="h-lbl">Борд:</span>${h.community.map(c=>ch(c,false,'small')).join('')}</div>`:''}
-      <div class="h-pp">${h.players.filter(p=>p.cards?.length).map(p=>`
-        <span class="h-p">${esc(p.name)}: ${p.cards.map(c=>ch(c,false,'small')).join('')}
-        ${p.handName?`<em>${esc(p.handName)}</em>`:''}</span>`).join('')}</div>
-      <div class="h-ft">🏆 ${h.winners.map(esc).join(', ')} · Банк: ${h.pot}</div>
+    <div class="he${h.won?' won':''}">
+      <div class="he-hdr"><span class="he-n">Раздача #${h.handNum}</span>
+        <span class="${h.won?'hw':'hl'}">${h.won?'✓ ПОБЕДА':'✗'}</span></div>
+      <div class="he-r"><span class="he-lbl">Рука:</span>${h.myCards.map(c=>cd(c,false,'small')).join('')}${h.myHand?`<span class="he-hn">${h.myHand}</span>`:''}</div>
+      ${h.community.length?`<div class="he-r"><span class="he-lbl">Борд:</span>${h.community.map(c=>cd(c,false,'small')).join('')}</div>`:''}
+      <div class="he-pp">${h.players.filter(p=>p.cards?.length).map(p=>`
+        <span class="he-p">${esc(p.name)}: ${p.cards.map(c=>cd(c,false,'small')).join('')}${p.handName?` <em>${esc(p.handName)}</em>`:''}</span>`).join('')}</div>
+      <div class="he-ft">🏆 ${h.winners.map(esc).join(', ')} · Банк: ${h.pot}</div>
     </div>`).join('');
 }
 function toggleHistory(){ const p=el('history-panel'); p.style.display=p.style.display==='none'?'flex':'none'; }
 
-// ─── Card HTML ────────────────────────────────────────────────────────────────
-function ch(card,hidden=false,size=''){
+// ─── Cards ────────────────────────────────────────────────────────────────────
+function cd(card,hidden=false,size=''){
   const cls=size?' '+size:'';
   if(!card||hidden) return `<div class="card face-down${cls}"></div>`;
-  const rm={11:'J',12:'Q',13:'K',14:'A'}, suits={s:'♠',h:'♥',d:'♦',c:'♣'};
+  const rm={11:'J',12:'Q',13:'K',14:'A'},suits={s:'♠',h:'♥',d:'♦',c:'♣'};
   const red=card.s==='h'||card.s==='d';
   return `<div class="card face-up${red?' red':''}${cls}"><span class="cr">${rm[card.r]||card.r}</span><span class="cs">${suits[card.s]}</span></div>`;
 }
@@ -371,9 +411,8 @@ function ch(card,hidden=false,size=''){
 // ─── Utils ────────────────────────────────────────────────────────────────────
 function el(id){ return document.getElementById(id); }
 function v(id){ return (el(id)?.value||'').trim(); }
-function show(id,vis){ const e=el(id); if(e) e.style.display=vis?'':'none'; }
+function sh(id,vis){ const e=el(id); if(e) e.style.display=vis?'':'none'; }
 function sBtn(id,vis){ const e=el(id); if(e) e.style.display=vis?'inline-flex':'none'; }
-function sFlex(id,vis){ const e=el(id); if(e) e.style.display=vis?'flex':'none'; }
 function toast(msg){ const t=el('toast'); t.textContent=msg; t.style.display='block';
   clearTimeout(t._t); t._t=setTimeout(()=>{ t.style.display='none'; },3500); }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
